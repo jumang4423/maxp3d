@@ -1,13 +1,13 @@
-// Max patch to 3D visualization using Processing Java
-// Features:
-// 1. Parse Max patch
-// 2. Display patch functions in 3D
-// 3. Display patch connections as curved lines
-// 4. Add lighting and camera
-// 5. Slow rotation around Y-axis
-// 6. Center camera based on nodes' mean position
-// 7. Render nodes as boxes with text
-// 8. Apply fixed sag to connections for a drooping effect
+// max patch to 3d visualization using processing java
+// features:
+// 1. parse max patch
+// 2. display patch functions in 3d
+// 3. display patch connections as curved lines
+// 4. add lighting and camera
+// 5. slow rotation around y-axis
+// 6. center camera based on nodes' mean position
+// 7. render nodes as boxes with text
+// 8. apply fixed sag to connections for a drooping effect
 
 import processing.core.*;
 import processing.data.*;
