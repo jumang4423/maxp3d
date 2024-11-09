@@ -1,53 +1,70 @@
-// max patch to 3D written in Processing Java.
-// Basics:
+// Max patch to 3D visualization using Processing Java
+// Features:
 // 1. Parse Max patch
 // 2. Display patch functions in 3D
-// 3. Display patch connections in 3D (curved lines)
-// 4. Add light and camera
-// 5. Rotate x only with slow speed.
-// 6. Center camera based on the mean position of all nodes
-// 7. Render nodes as squares with text
-// 8. Apply fixed sag to connections to simulate a drooping effect
+// 3. Display patch connections as curved lines
+// 4. Add lighting and camera
+// 5. Slow rotation around Y-axis
+// 6. Center camera based on nodes' mean position
+// 7. Render nodes as boxes with text
+// 8. Apply fixed sag to connections for a drooping effect
 
 import processing.core.*;
 import processing.data.*;
 import java.util.*;
 
-String maxp_loc = "./test.maxpat";
+final String MAX_PATCH_LOCATION = "./test.maxpat";
+final int WINDOW_WIDTH = 1280;
+final int WINDOW_HEIGHT = 720;
+final float CAMERA_DISTANCE = 500;
+final float ROTATION_SPEED = 0.02;
+final String FONT_NAME = "Iosevka Term";
+final int FONT_SIZE = 16;
 
 ArrayList<Node> nodes;
 ArrayList<Connection> connections;
-
-PVector meanPosition = new PVector(0, 0, 0);
-
+PVector meanPosition = new PVector();
 float angle = 0;
-
 PFont font;
 
+void settings() {
+    size(WINDOW_WIDTH, WINDOW_HEIGHT, P3D);
+}
+
 void setup() {
-    size(1280, 720, P3D);
     background(255);
-    parseMaxPatch(maxp_loc);
+    parseMaxPatch(MAX_PATCH_LOCATION);
     calculateMeanPosition();
-    font = createFont("Iosevka Term", 16);
+    font = createFont(FONT_NAME, FONT_SIZE);
 }
 
 void draw() {
     background(255);
-    
-    float camDistance = 500;
-    camera(meanPosition.x, meanPosition.y, meanPosition.z + camDistance, 
-           meanPosition.x, meanPosition.y, meanPosition.z, 
+    setupCamera();
+    applyTransformations();
+    renderConnections();
+    renderNodes();
+}
+
+void setupCamera() {
+    camera(meanPosition.x, meanPosition.y, meanPosition.z + CAMERA_DISTANCE,
+           meanPosition.x, meanPosition.y, meanPosition.z,
            0, 1, 0);
-    
+}
+
+void applyTransformations() {
     translate(meanPosition.x, meanPosition.y, meanPosition.z);
     rotateY(angle);
-    angle += 0.02;
-    
+    angle += ROTATION_SPEED;
+}
+
+void renderConnections() {
     for (Connection conn : connections) {
         conn.display();
     }
+}
 
+void renderNodes() {
     for (Node node : nodes) {
         node.display();
     }
@@ -63,58 +80,51 @@ void parseMaxPatch(String filepath) {
     connections = new ArrayList<Connection>();
 
     for (int i = 0; i < boxes.size(); i++) {
-        JSONObject boxObject = boxes.getJSONObject(i).getJSONObject("box");
-        String id = boxObject.getString("id");
-        String maxClass = boxObject.getString("maxclass");
-        String text;
+        JSONObject box = boxes.getJSONObject(i).getJSONObject("box");
+        String id = box.getString("id");
+        String maxClass = box.getString("maxclass");
+        String text = getNodeText(box, maxClass);
         
-        if (maxClass.equals("flonum")) {
-            text = "flonum";
-        } else if (maxClass.equals("toggle")) {
-            text = "×";
-        } else if (maxClass.equals("button")) {
-            text = "o";
-        } else if (maxClass.equals("slider")) {
-            text = "00000";
-        } else if (maxClass.equals("live.dial")) {
-            text = "0%";
-        } else {
-            text = boxObject.hasKey("text") ? boxObject.getString("text") : "???";
-        }
-        
-        JSONArray rect = boxObject.getJSONArray("patching_rect");
+        JSONArray rect = box.getJSONArray("patching_rect");
         float x = rect.getFloat(0);
         float y = rect.getFloat(1);
-        float z = rect.getFloat(2);
+        float z = rect.getFloat(2) *1.5;
         nodes.add(new Node(id, text, maxClass, x, y, z));
     }
 
     for (int i = 0; i < lines.size(); i++) {
-        JSONObject lineObject = lines.getJSONObject(i).getJSONObject("patchline");
-        JSONArray source = lineObject.getJSONArray("source");
-        JSONArray destination = lineObject.getJSONArray("destination");
-        String sourceId = source.getString(0);
-        String destId = destination.getString(0);
+        JSONObject line = lines.getJSONObject(i).getJSONObject("patchline");
+        String sourceId = line.getJSONArray("source").getString(0);
+        String destId = line.getJSONArray("destination").getString(0);
         connections.add(new Connection(sourceId, destId));
     }
 }
 
-void calculateMeanPosition() {
-    if (nodes.size() == 0) return;
-    
-    float sumX = 0;
-    float sumY = 0;
-    float sumZ = 0;
-    
-    for (Node node : nodes) {
-        sumX += node.position.x;
-        sumY += node.position.y;
-        sumZ += node.position.z;
+String getNodeText(JSONObject box, String maxClass) {
+    switch (maxClass) {
+        case "flonum":
+            return "flonum";
+        case "toggle":
+            return "×";
+        case "button":
+            return "o";
+        case "slider":
+            return "00000";
+        case "live.dial":
+            return "0%";
+        default:
+            return box.hasKey("text") ? box.getString("text") : "???";
     }
+}
+
+void calculateMeanPosition() {
+    if (nodes.isEmpty()) return;
     
-    meanPosition.x = sumX / nodes.size();
-    meanPosition.y = sumY / nodes.size();
-    meanPosition.z = sumZ / nodes.size();
+    PVector sum = new PVector();
+    for (Node node : nodes) {
+        sum.add(node.position);
+    }
+    meanPosition = PVector.div(sum, nodes.size());
 }
 
 class Node {
@@ -122,89 +132,84 @@ class Node {
     String label;
     String maxClass;
     PVector position;
-    float width = 50;
-    float height = 30;
-    float depth = 5;
-    boolean isBlinking = false;
+    static final float WIDTH = 50;
+    static final float HEIGHT = 30;
+    static final float DEPTH = 5;
+    boolean isBlinking;
     String originalLabel;
     int sliderLength = 5;
-    
+
     Node(String id, String label, String maxClass, float x, float y, float z) {
         this.id = id;
         this.label = label;
         this.originalLabel = label;
         this.maxClass = maxClass;
         this.position = new PVector(x, y, z);
-        
-        if (maxClass.equals("button")) {
-            isBlinking = true;
-        }
+        this.isBlinking = maxClass.equals("button");
     }
+
     void display() {
         pushMatrix();
         translate(position.x - meanPosition.x, position.y - meanPosition.y, position.z - meanPosition.z);
-        
         rotateY(-angle);
-        
         noStroke();
-        
         textFont(font);
+
         float textWidthValue = textWidth(label.toUpperCase()) + 10;
-        
-        float sectionHeight = height/3;
-        
+        float sectionHeight = HEIGHT / 3;
+
+        // Top section
         pushMatrix();
-        translate(0, -sectionHeight*1.25, 0);
+        translate(0, -sectionHeight * 1.25, 0);
         fill(200);
-        box(textWidthValue, sectionHeight*0.5, depth);
+        box(textWidthValue, sectionHeight * 0.5, DEPTH);
         popMatrix();
-        
+
+        // Middle section
         fill(255);
-        box(textWidthValue, sectionHeight*2, depth);
-        
+        box(textWidthValue, sectionHeight * 2, DEPTH);
+
+        // Bottom section
         pushMatrix();
-        translate(0, sectionHeight*1.25, 0);
+        translate(0, sectionHeight * 1.25, 0);
         fill(200);
-        box(textWidthValue, sectionHeight*0.5, depth);
+        box(textWidthValue, sectionHeight * 0.5, DEPTH);
         popMatrix();
-        
+
+        // Display text
         fill(128);
         textAlign(CENTER, CENTER);
-        
-        String displayText = label.toUpperCase();
-        if (maxClass.equals("flonum")) {
-            float randomNumber = random(0, 100);
-            displayText = String.format("▶ %.2f", randomNumber);
-        } else if (maxClass.equals("button")) {
-            displayText = (frameCount % 2 == 0) ? "O" : "X";
-        } else if (maxClass.equals("slider")) {
-            displayText = generateSliderText();
-        } else if (maxClass.equals("live.dial")) {
-            int percentage = int(random(0, 101));  // 0 to 100
-            displayText = percentage + "%";
-        }
+        String displayText = getDisplayText();
         
         pushMatrix();
-        translate(0, -2, depth/2 + 1);
+        translate(0, -2, DEPTH / 2 + 1);
         text(displayText, 0, 0);
         popMatrix();
         popMatrix();
     }
-    
+
+    String getDisplayText() {
+        switch (maxClass) {
+            case "flonum":
+                return String.format("▶ %.2f", random(0, 100));
+            case "button":
+                return (frameCount % 2 == 0) ? "O" : "X";
+            case "slider":
+                return generateSliderText();
+            case "live.dial":
+                return int(random(0, 101)) + "%";
+            default:
+                return label.toUpperCase();
+        }
+    }
+
     String generateSliderText() {
         char[] text = new char[sliderLength];
         int randomPosition = int(random(sliderLength));
-        
-        // Fill with zeros first
-        for (int i = 0; i < sliderLength; i++) {
-            text[i] = '0';
-        }
-        
-        // Randomly replace some positions with 'x'
+        Arrays.fill(text, '0');
         for (int i = randomPosition; i < sliderLength; i++) {
             text[i] = 'x';
         }
-        
         return new String(text);
     }
 }
@@ -215,30 +220,30 @@ class Connection {
     PVector fromPos;
     PVector toPos;
     PVector control;
-    
+
     Connection(String fromId, String toId) {
         this.fromId = fromId;
         this.toId = toId;
         this.fromPos = getNodePosition(fromId);
         this.toPos = getNodePosition(toId);
-        this.control = getFixedControlPoint();
+        this.control = calculateControlPoint();
     }
-    
+
     PVector getNodePosition(String id) {
         for (Node node : nodes) {
             if (node.id.equals(id)) {
                 return node.position.copy();
             }
         }
-        return new PVector(0, 0, 0);
+        return new PVector();
     }
-    
-    PVector getFixedControlPoint() {
+
+    PVector calculateControlPoint() {
         PVector mid = PVector.add(fromPos, toPos).div(2);
         mid.y += 50;
         return mid;
     }
-    
+
     void display() {
         stroke(200);
         strokeWeight(4);
